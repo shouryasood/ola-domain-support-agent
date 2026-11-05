@@ -1,0 +1,31 @@
+
+# AI Agent Framework
+crewai
+autogen-agentchat
+autogen-core
+autogen-ext
+
+# RAG and Vector Database
+sentence-transformers
+chromadb
+numpy
+
+# LangChain Memory
+langchain-core
+
+# API and Backend
+fastapi
+uvicorn[standard]
+pydantic
+websockets
+
+# Data Processing
+pandas
+
+# Testing
+pytest
+httpx
+pytest-asyncio
+
+# Code Quality
+ruff
