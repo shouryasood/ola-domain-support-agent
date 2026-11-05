@@ -1,0 +1,34 @@
+{
+  "total_records": 240,
+  "category_counts": {
+    "Technical Issue": 48,
+    "Billing": 48,
+    "Account Access": 48,
+    "Product Defect": 48,
+    "General Inquiry": 48
+  },
+  "status_counts": {
+    "Closed": 48,
+    "Escalated": 48,
+    "Resolved": 48,
+    "In Progress": 48,
+    "Open": 48
+  },
+  "escalated_count": 47,
+  "escalation_percentage": 19.58,
+  "design": {
+    "data_seed": 2026,
+    "escalation_seed": 10,
+    "category_weights": "equal; 20% each",
+    "status_weights": "equal; 20% each",
+    "escalation_probability": 0.2,
+    "resolution_time_hours_range": [
+      0.5,
+      96.0
+    ],
+    "amount_inr_range": [
+      50,
+      5000
+    ]
+  }
+}

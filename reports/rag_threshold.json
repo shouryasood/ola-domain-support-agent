@@ -1,0 +1,19 @@
+{
+  "collection": "support_sentence",
+  "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "in_scope_scores": {
+    "How are support tickets prioritized?": 0.6307435631752014,
+    "What are the response targets by severity?": 0.6001822352409363,
+    "When should support escalate a ticket?": 0.7081500291824341,
+    "How does a customer request refund review?": 0.5896403193473816,
+    "Which channel should be used for account-specific updates?": 0.5915278196334839
+  },
+  "out_of_scope_scores": {
+    "What is the capital of France?": 0.15644711256027222,
+    "How do I bake sourdough bread?": 0.10631638765335083
+  },
+  "lowest_in_scope": 0.5896403193473816,
+  "highest_out_of_scope": 0.15644711256027222,
+  "threshold": 0.3730437159538269,
+  "rule": "fallback when top-1 cosine similarity is below threshold"
+}
