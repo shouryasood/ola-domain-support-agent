@@ -1,0 +1,28 @@
+{
+  "record_count": 240,
+  "score_formula": "0.75 * float(escalated) + 0.25 * (1 - days_since_created / 30)",
+  "threshold_percentile": 80,
+  "threshold": 0.25,
+  "score_min": 0.0,
+  "score_max": 1.0,
+  "sample_records": [
+    {
+      "found": true,
+      "record_id": "TKT-00001",
+      "status": "Closed",
+      "resolution_time_hours": 91.32,
+      "days_since_created": 7,
+      "escalated": false,
+      "escalation_score": 0.191667,
+      "recommended_escalation_threshold": 0.25,
+      "recommend_escalation": false,
+      "score_formula": "0.75 * escalated + 0.25 * (1 - days_since_created / 30)",
+      "threshold_basis": "80th percentile of this generated dataset's scores"
+    },
+    {
+      "found": false,
+      "record_id": "NOT-A-TICKET",
+      "error": "Ticket record was not found."
+    }
+  ]
+}
