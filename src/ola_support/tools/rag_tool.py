@@ -28,5 +28,6 @@ class RagLookupTool(BaseTool):
         ticket_lookup.TOOL_CALL_COUNTS["rag_lookup"] = (
             ticket_lookup.TOOL_CALL_COUNTS.get("rag_lookup", 0) + 1
         )
-        ticket_lookup.LAST_TOOL_RESULT = json.dumps(grounded_answer(query))
-        return ticket_lookup.LAST_TOOL_RESULT
+        result = json.dumps(grounded_answer(query))
+        ticket_lookup.LAST_TOOL_RESULT = result
+        return result
