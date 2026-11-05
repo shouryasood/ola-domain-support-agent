@@ -2,13 +2,13 @@
 
 **Track:** Ola (Business Operations / Customer Support).
 
-**Project status:** implementation guide and starter scaffold; do not mark the submission complete until the required code, reports, and demonstration transcripts have been produced and checked.
+**Project status:** Part 1 has been run through the initial RAG demonstration. Parts 2–4 and retrieval-quality improvements remain to be completed.
 
 This repository is the 14-day capstone for a deterministic, production-minded support assistant. It combines a generated ticket dataset, a locally embedded policy knowledge base, two retrieval strategies, a CrewAI crew, in-process conversation memory, input and output guardrails, an AutoGen answer review, governance controls, and a FastAPI/WebSocket interface.
 
 The graded path must run with `MOCK_LLM=true`, no API keys, and no outbound LLM calls. CrewAI telemetry is disabled before creating or running the crew. SentenceTransformers may need a one-time model download during setup; cache the model first, then run the demonstrations with network access disabled to verify offline operation.
 
-> **Honesty note:** this checkout currently contains a scaffold. Several modules, scripts, reports, generated data, and transcripts are empty or incomplete. The procedure below describes what to implement and run; empty files are not evidence that an acceptance criterion has passed.
+> **Status note:** the Part 1 dataset, knowledge-base generation, indexing, threshold calibration, retrieval comparison, and demo commands have been run. Many later modules and acceptance demonstrations remain incomplete. Results below are the actual output supplied from this run; they are not a claim that the full capstone is complete.
 
 ## 1. Project layout
 
@@ -81,9 +81,9 @@ The current `src/ola_support/dataset.py` declares these reproducibility choices:
 | Escalation draw | Independent seeded draw with probability `0.20`; the generated percentage must be 10–30% |
 | Resolution duration | Uniform draw from 0.5 to 96 hours; intended to represent same-day through multi-day investigation |
 | Ticket age | Integer from 0 to 30 days, inclusive |
-| Synthetic amount | Add `amount_inr` as an optional generated field in the ₹50–₹5,000 range, because the submission instructions request an amount range even though it is absent from the required schema |
+| Synthetic amount | `amount_inr` is included as an optional field, generated in the ₹50–₹5,000 range to satisfy the submission guideline |
 
-Do not write a claimed escalation percentage into this table. Run the generator and record its actual value in `data/reports/dataset_report.json` and in the completed-submission section below. If it falls outside the allowed band, change a seed or the escalation probability and regenerate; never hand-edit selected records to force a pass.
+Latest generated report: **47 of 240 tickets were escalated (19.58%)**. Each of the five categories has 48 records, and each of the five statuses has 48 records. This satisfies the Part 1 count and escalation-rate constraints. The generator wrote `data/generated/support_tickets.json` and `data/reports/dataset_report.json`.
 
 The final README and generator must agree exactly about seeds, weights, ranges, and fields. If you change a design choice, update both.
 
@@ -115,6 +115,15 @@ $env:TOKEN_BUDGET_PER_REQUEST = "2000"
 
 The same defaults belong in `.env.example`. Do not put keys or real personal information in the repository. No key should be required by the mock mode.
 
+The latest embedding run printed a Hugging Face Hub unauthenticated-request warning. It did not prevent indexing, but verify local-only runtime after the model is cached. Before the offline verification run, set:
+
+```powershell
+$env:HF_HUB_OFFLINE = "1"
+$env:TRANSFORMERS_OFFLINE = "1"
+```
+
+Do not claim offline embedding execution until indexing and retrieval succeed with these settings enabled.
+
 ## 4. Build and run in dependency order
 
 Complete each step before starting the next one. A later layer depends on the outputs of the earlier layers.
@@ -139,7 +148,7 @@ If you use `scripts/generate_dataset.py`, make it call the same generator and va
 
 ### Step 2 — Author the policy knowledge base
 
-Create one original `.md` file per topic under `knowledge_base/`; each must have 2–5 complete sentences. Cover all of:
+Create one original `.md` file per required topic under `knowledge_base/`; each required document must have 2–5 complete sentences. Cover all of:
 
 1. Ticket priority classification rules (`ticket_priority.md`)
 2. SLA by severity (`sla_policy.md`)
@@ -155,6 +164,8 @@ Create one original `.md` file per topic under `knowledge_base/`; each must have
 12. Ticket data retention (`data_retention.md`)
 
 These are capstone demonstration policies, not claims about actual Ola policy. Use fabricated examples only. Do not put real phone numbers, names, addresses, or payment details in the corpus.
+
+The latest `create_knowledge_base.py` run wrote **55 policy documents**: the 12 required topics plus 43 additional documents. All 55 were indexed. Review the extra documents to make sure they are original, accurate for this synthetic scenario, and not contradictory. The additional material may contribute to unrelated documents appearing in top-k retrieval; rebuild both collections and rerun measurements after changing any source document.
 
 ### Step 3 — Implement two chunking and indexing strategies
 
@@ -213,6 +224,41 @@ Save results to `reports/retrieval_comparison.csv`. Add a 2–3 sentence recomme
 ```powershell
 python scripts/evaluate_retrieval.py
 ```
+
+#### Results from the latest Part 1 run
+
+The dataset generator produced **240 records**. Each of the five categories and five statuses occurred 48 times. It generated 47 escalated records, or **19.58%**, within the required 10–30% band. The recorded design uses `DATA_SEED=2026`, `ESCALATION_SEED=10`, equal category/status weights, escalation probability 0.20, resolution times from 0.5 to 96 hours, and synthetic amounts from ₹50 to ₹5,000.
+
+The knowledge-base script wrote **55 non-empty documents** and the index builder indexed all 55. This exceeds the minimum 12 required topics; inspect all 43 additional documents for accuracy and conflicts. The index run reported 55 fixed-overlap chunks and 166 sentence chunks.
+
+The measured top-1 similarities on `support_sentence`, using `sentence-transformers/all-MiniLM-L6-v2`, were:
+
+| Query | Scope | Cosine similarity |
+|---|---|---:|
+| How are support tickets prioritized? | In scope | 0.630744 |
+| What are the response targets by severity? | In scope | 0.600182 |
+| When should support escalate a ticket? | In scope | 0.708150 |
+| How does a customer request refund review? | In scope | 0.589640 |
+| Which channel should be used for account-specific updates? | In scope | 0.591528 |
+| What is the capital of France? | Out of scope | 0.156447 |
+| How do I bake sourdough bread? | Out of scope | 0.106316 |
+
+The highest out-of-scope similarity was 0.156447 and the lowest in-scope similarity was 0.589640. Their midpoint gives a measured fallback threshold of **0.373044** (unrounded: `0.3730437159538269`). The implemented rule returns the fallback when top-1 similarity is below this value. The five in-scope questions scored above the threshold, and the out-of-scope France question triggered the fallback. Full precision values are in `reports/rag_threshold.json`.
+
+Document-level precision and recall for the same five in-scope queries, with top-k 4 chunks and deduplicated parent document IDs:
+
+| Query | Fixed overlap precision | Fixed overlap recall | Sentence precision | Sentence recall |
+|---|---:|---:|---:|---:|
+| Ticket prioritization | 1/4 = 0.250 | 1/1 = 1.000 | 1/3 = 0.333 | 1/1 = 1.000 |
+| SLA by severity | 1/4 = 0.250 | 1/1 = 1.000 | 1/3 = 0.333 | 1/1 = 1.000 |
+| Escalation | 1/4 = 0.250 | 1/1 = 1.000 | 1/4 = 0.250 | 1/1 = 1.000 |
+| Refund review | 1/4 = 0.250 | 1/1 = 1.000 | 1/3 = 0.333 | 1/1 = 1.000 |
+| Communication channel | 1/4 = 0.250 | 1/1 = 1.000 | 1/4 = 0.250 | 1/1 = 1.000 |
+| **Mean** | **0.250** | **1.000** | **0.300** | **1.000** |
+
+Sentence chunking is the provisional recommendation: its mean precision is 0.300 compared with 0.250 for fixed overlap, and both strategies have mean recall 1.000. The 0.050 absolute precision gain is modest, and the top-k results still include unrelated documents, so improve precision before describing retrieval as production-ready. The per-query arithmetic and retrieved IDs are recorded in `reports/retrieval_comparison.csv`.
+
+The RAG demonstration returned the expected fallback for the out-of-scope question. Its supported answers also included unrelated snippets and visible concatenation/spacing artifacts—for example, the prioritization response included retention and SLA text. This shows the fallback works, but answer relevance still needs improvement. Review the extra policy documents and chunk text, reduce irrelevant retrieval (for example, tune top-k or add a relevance filter), rebuild both collections, then rerun calibration, retrieval comparison, and the demo. Replace the table above if the new measured results differ.
 
 ### Step 6 — Implement the ticket status tool
 
