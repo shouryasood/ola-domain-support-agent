@@ -2,13 +2,13 @@
 
 **Track:** Ola (Business Operations / Customer Support).
 
-**Project status:** Parts 1–2 have initial run evidence. The CrewAI policy and ticket tools, structured response, memory demonstration, and guardrail demonstrations ran successfully. Parts 3–4 remain; retrieval precision and offline embedding execution still need follow-up.
+**Project status:** Parts 1–2 have initial run evidence. Part 3's FastAPI app now starts locally, and its OpenAPI page displays `POST /ask` and `POST /add-document`. Successful endpoint calls, WebSocket disconnect handling, JSONL privacy checks, and the 15-query evaluation still need recorded evidence. Part 4 remains in progress; retrieval precision and offline embedding execution also need follow-up.
 
 This repository is the 14-day capstone for a deterministic, production-minded support assistant. It combines a generated ticket dataset, a locally embedded policy knowledge base, two retrieval strategies, a CrewAI crew, in-process conversation memory, input and output guardrails, an AutoGen answer review, governance controls, and a FastAPI/WebSocket interface.
 
 The graded path must run with `MOCK_LLM=true`, no API keys, and no outbound LLM calls. CrewAI telemetry is disabled before creating or running the crew. SentenceTransformers may need a one-time model download during setup; cache the model first, then run the demonstrations with network access disabled to verify offline operation.
 
-> **Status note:** Part 1 measurements and the Part 2 CrewAI, memory, and guardrail demonstrations below reflect supplied run output. Many later modules and acceptance demonstrations remain incomplete. This is not a claim that the full capstone is complete.
+> **Status note:** Part 1 measurements, Part 2 CrewAI/memory/guardrail demonstrations, and the Part 3 server startup/OpenAPI page below reflect supplied run output. The Part 3 screenshot confirms that the docs page displays the two HTTP routes; it does not demonstrate a successful `/ask` or `/add-document` call, a WebSocket exchange, safe JSONL logs, or the 15-query evaluation. Later acceptance demonstrations remain incomplete, so this is not a claim that the full capstone is complete.
 
 ## 1. Project layout
 
@@ -392,6 +392,21 @@ python -m uvicorn ola_support.api.main:app --app-dir src --reload
 
 Open `http://127.0.0.1:8000/docs` to inspect and exercise the HTTP endpoints. For WebSocket validation, use a client that connects, sends at least two messages, and disconnects; then confirm the server remains available. Save sanitized request/response examples in `transcripts/api_tests.md`.
 
+#### Latest Part 3 run evidence
+
+The local run completed the following checks:
+
+| Check | Result |
+|---|---|
+| Guardrail demonstration | Phone number was masked as `[PHONE REDACTED]`; injection was detected; the supported query did not fall back; the out-of-scope query did fall back; and the deliberate ungrounded claim was rejected. |
+| ChromaDB index build | 55 source documents, 55 fixed-overlap chunks, and 166 sentence chunks were indexed. Both collections returned the ticket-priority document for the sample query. |
+| FastAPI startup | Uvicorn reported that the application startup completed on `http://127.0.0.1:8000`. |
+| OpenAPI page | `/docs` loaded and displayed `POST /ask` and `POST /add-document` with their request/response schemas. The screenshot below records this route-registration check. |
+
+![FastAPI OpenAPI docs showing the registered ask and add-document endpoints](Diagrams/Step-3Success.png)
+
+The screenshot shows the API documentation and route schemas, not a successful endpoint response. Keep the API checklist below unchecked until the HTTP request, WebSocket/disconnect, sanitized JSONL log, and 15-query evaluation evidence have been saved.
+
 ## 5. Full execution order
 
 After all modules and scripts above have been implemented, run the following from the repository root in the same virtual environment. Each script should fail fast if its prerequisite output is missing.
@@ -452,7 +467,7 @@ When implementation and evidence are complete:
 - Add actual measured retrieval similarities, threshold, per-strategy metrics, and the recommendation based on those results.
 - Add the actual escalation threshold and explain the dataset percentile used.
 - State that `MOCK_LLM=true`, `CREWAI_DISABLE_TELEMETRY=true`, and `OTEL_SDK_DISABLED=true` were used for the demonstrations.
-- Ensure no image, diagram, screenshot, PDF, video, or audio is part of the submission. The `Diagrams/` asset currently in this checkout is not a deliverable; do not reference it in the final submission README.
+- The `Diagrams/Step-3Success.png` image is temporary development evidence included above at the user's request. The original capstone brief does not accept screenshots, so remove the image reference and asset before final capstone submission if that restriction remains in force.
 - Confirm all required source code, data, knowledge documents, reports, and transcripts are inside one repository.
 - Publish that one repository and submit its single URL.
 
