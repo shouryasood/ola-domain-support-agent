@@ -10,13 +10,14 @@ os.environ["MOCK_LLM"] = "true"
 os.environ["CREWAI_DISABLE_TELEMETRY"] = "true"
 os.environ["OTEL_SDK_DISABLED"] = "true"
 os.environ["CREWAI_TRACING_ENABLED"] = "false"
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 from fastapi.testclient import TestClient
 
 from ola_support.api.logging_config import LOG_PATH
 from ola_support.api.main import app
 from ola_support.rag.indexing import KB_DIR, build_indexes
-from ola_support.guardrails import mask_phone_numbers
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -143,6 +144,8 @@ def run_demo() -> dict[str, Any]:
         assert report["http"]["ask_trace_id"]
         assert len(websocket_turns) == 2
         assert report["websocket"]["http_still_responded_after_disconnect"]
+        if RAW_PHONE in json.dumps(report, ensure_ascii=False):
+            raise AssertionError("The raw phone number reached the API transcript")
 
         TRANSCRIPT_PATH.parent.mkdir(parents=True, exist_ok=True)
         TRANSCRIPT_PATH.write_text(
