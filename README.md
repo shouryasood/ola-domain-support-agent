@@ -2,13 +2,13 @@
 
 **Track:** Ola (Business Operations / Customer Support).
 
-**Project status:** Parts 1–2 have initial run evidence. Part 3's FastAPI app now starts locally, and its OpenAPI page displays `POST /ask` and `POST /add-document`. Successful endpoint calls, WebSocket disconnect handling, JSONL privacy checks, and the 15-query evaluation still need recorded evidence. Part 4 remains in progress; retrieval precision and offline embedding execution also need follow-up.
+**Project status:** Parts 1–2 have initial run evidence. Part 3's FastAPI app starts locally, its OpenAPI page displays `POST /ask` and `POST /add-document`, and a policy question returned HTTP 200 with a structured response. The `/add-document` call, WebSocket disconnect handling, JSONL privacy check, and 15-query evaluation still need recorded evidence. Part 4 remains in progress; retrieval precision and offline embedding execution also need follow-up.
 
 This repository is the 14-day capstone for a deterministic, production-minded support assistant. It combines a generated ticket dataset, a locally embedded policy knowledge base, two retrieval strategies, a CrewAI crew, in-process conversation memory, input and output guardrails, an AutoGen answer review, governance controls, and a FastAPI/WebSocket interface.
 
 The graded path must run with `MOCK_LLM=true`, no API keys, and no outbound LLM calls. CrewAI telemetry is disabled before creating or running the crew. SentenceTransformers may need a one-time model download during setup; cache the model first, then run the demonstrations with network access disabled to verify offline operation.
 
-> **Status note:** Part 1 measurements, Part 2 CrewAI/memory/guardrail demonstrations, and the Part 3 server startup/OpenAPI page below reflect supplied run output. The Part 3 screenshot confirms that the docs page displays the two HTTP routes; it does not demonstrate a successful `/ask` or `/add-document` call, a WebSocket exchange, safe JSONL logs, or the 15-query evaluation. Later acceptance demonstrations remain incomplete, so this is not a claim that the full capstone is complete.
+> **Status note:** Part 1 measurements, Part 2 CrewAI/memory/guardrail demonstrations, and the Part 3 server startup, OpenAPI page, and one successful `/ask` request below reflect supplied run output. That `/ask` answer cited `ticket_priority`, `data_retention`, and `sla_policy`; the latter two are unrelated to the priority question, so retrieval relevance still needs improvement. `/add-document`, WebSocket handling, JSONL privacy, and the 15-query evaluation have not yet been evidenced. Later acceptance demonstrations remain incomplete, so this is not a claim that the full capstone is complete.
 
 ## 1. Project layout
 
@@ -402,10 +402,13 @@ The local run completed the following checks:
 | ChromaDB index build | 55 source documents, 55 fixed-overlap chunks, and 166 sentence chunks were indexed. Both collections returned the ticket-priority document for the sample query. |
 | FastAPI startup | Uvicorn reported that the application startup completed on `http://127.0.0.1:8000`. |
 | OpenAPI page | `/docs` loaded and displayed `POST /ask` and `POST /add-document` with their request/response schemas. The screenshot below records this route-registration check. |
+| `POST /ask` | `How are support tickets prioritized?` returned HTTP `200`, `fallback: false`, and a valid `SupportResponse`. The response listed `ticket_priority`, `data_retention`, and `sla_policy`; the latter two are irrelevant results and are recorded as a retrieval-quality limitation. |
 
 ![FastAPI OpenAPI docs showing the registered ask and add-document endpoints](Diagrams/Step-3Success.png)
 
-The screenshot shows the API documentation and route schemas, not a successful endpoint response. Keep the API checklist below unchecked until the HTTP request, WebSocket/disconnect, sanitized JSONL log, and 15-query evaluation evidence have been saved.
+The screenshot shows the API documentation and route schemas. The successful `/ask` response is recorded from the second-terminal output, not from the screenshot. The request returned `200 OK`, `fallback: false`, and the expected `ticket_priority` source, but also included unrelated `data_retention` and `sla_policy` sources. `/add-document`, WebSocket/disconnect, sanitized JSONL log, and 15-query evaluation evidence remain to be saved before marking the API acceptance item complete.
+
+The CrewAI output also printed an ephemeral trace URL even though telemetry environment variables were set. Telemetry and execution tracing are separate controls; explicitly disable tracing on the `Crew` (`tracing=False`) and confirm no trace-sharing prompt or upload occurs before claiming zero network activity. CrewAI documents tracing as independently controlled from telemetry and says trace uploads require an approved export ([CrewAI tracing documentation](https://github.com/crewAIInc/crewAI/blob/main/docs/edge/en/observability/tracing.mdx)).
 
 ## 5. Full execution order
 
