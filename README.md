@@ -2,11 +2,11 @@
 
 **Track:** Ola (Business Operations / Customer Support).
 
-**Project status:** Parts 1–4 have local `MOCK_LLM` run evidence, including both HTTP endpoints, WebSocket disconnect recovery, privacy-checked JSONL logs, and a 15-query evaluation. The evaluation and API transcripts and reports are linked below. Retrieval relevance still needs improvement because some top-k results are unrelated to the question; offline SentenceTransformers loading succeeded using the cached model.
+**Project status:** Parts 1–4 have local `MOCK_LLM` run evidence, including both HTTP endpoints, WebSocket disconnect recovery, privacy-checked JSONL logs, and a 15-query evaluation. Detailed results are in [Readme_Evaluation_Results.md](Readme_Evaluation_Results.md), and the checklist is in [README_AcceptanceCritiria.md](README_AcceptanceCritiria.md). Retrieval relevance still needs improvement because some top-k results are unrelated to the question; offline SentenceTransformers loading succeeded using the cached model. The public repository is [shouryasood/ola-domain-support-agent](https://github.com/shouryasood/ola-domain-support-agent).
 
 This repository is the 14-day capstone for a deterministic, production-minded support assistant. It combines a generated ticket dataset, a locally embedded policy knowledge base, two retrieval strategies, a CrewAI crew, in-process conversation memory, input and output guardrails, an AutoGen answer review, governance controls, and a FastAPI/WebSocket interface.
 
-The graded path must run with `MOCK_LLM=true`, no API keys, and no outbound LLM calls. CrewAI telemetry is disabled before creating or running the crew. SentenceTransformers may need a one-time model download during setup; cache the model first, then run the demonstrations with network access disabled to verify offline operation.
+The graded path runs with `MOCK_LLM=true`, no API keys, and no outbound LLM calls. CrewAI telemetry and tracing are disabled before running the crew. SentenceTransformers needs a one-time model download on first setup; after caching, the final evaluation and API demonstrations loaded it successfully with `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`.
 
 > **Status note:** The Part 3 acceptance items now have repeatable evidence in `transcripts/api_tests.md`, `transcripts/evaluation_tests.md`, `reports/evaluation_scores.csv`, and `reports/evaluation_summary.json`. The API test uses a temporary fabricated document, removes it after checking `/add-document`, and rebuilds the baseline indexes. This completes the listed Part 3 route, logging, and evaluation evidence; retrieval relevance is still a known quality limitation.
 
@@ -115,14 +115,14 @@ $env:TOKEN_BUDGET_PER_REQUEST = "2000"
 
 The same defaults belong in `.env.example`. Do not put keys or real personal information in the repository. No key should be required by the mock mode.
 
-The latest embedding run printed a Hugging Face Hub unauthenticated-request warning. It did not prevent indexing, but verify local-only runtime after the model is cached. Before the offline verification run, set:
+The first embedding run printed a Hugging Face Hub unauthenticated-request warning. The final evaluation and API verification were rerun with offline mode enabled and successfully loaded the cached model. Set these variables when reproducing the offline runs:
 
 ```powershell
 $env:HF_HUB_OFFLINE = "1"
 $env:TRANSFORMERS_OFFLINE = "1"
 ```
 
-Do not claim offline embedding execution until indexing and retrieval succeed with these settings enabled.
+The offline runs may print that the Hugging Face Hub cannot be reached because offline mode is on; the cached commit and model weights loaded successfully.
 
 ## 4. Build and run in dependency order
 
@@ -335,7 +335,7 @@ The policy answer is grounded in retrieved passages, but its sources include two
 
 The memory script emitted a LangChain deprecation warning for `InMemoryChatMessageHistory`; the demonstration still completed and showed the required session carry-over/reset. Keep this warning documented rather than suppressing it, and pin the LangChain version used for the submitted transcript.
 
-SentenceTransformers again printed an unauthenticated Hugging Face Hub warning. Offline inference is not yet verified. After the model is cached, rerun the retrieval demonstration with `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`, and record the result. If CrewAI asks to share execution traces, select **N**; the graded run should not upload prompts or tool outputs.
+The final evaluation and API runs succeeded with `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`, using the cached model. Those runs printed the expected offline Hub notice and loaded the weights successfully. If CrewAI asks to share execution traces, select **N**; the graded run should not upload prompts or tool outputs.
 
 ### Step 10 — 15-query evaluation results
 
@@ -515,7 +515,7 @@ When implementation and evidence are complete:
 - [x] Memory carry-over and fresh-session reset demonstrated.
 - [x] Crew final output validates against the Pydantic `SupportResponse` schema.
 - [x] Phone masking, injection guard, and groundedness refusal each demonstrated.
-- [ ] FastAPI has two HTTP endpoints and a WebSocket that handles disconnects.
+- [x] FastAPI has two HTTP endpoints and a WebSocket that handles disconnects.
 - [x] FastAPI exposes `/ask` and `/add-document`; the WebSocket handles a disconnect and the app continues to respond.
 - [x] JSONL logs include trace IDs and timing and do not store the raw fixed-format phone value.
 - [x] All 15 evaluation questions have four scores and four reported averages.
