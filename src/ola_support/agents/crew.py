@@ -17,6 +17,27 @@ from ola_support.tools.ticket_lookup import (
     write_escalation_report,
 )
 
+LAST_TOOL_OWNERSHIP: dict[str, list[str]] = {}
+
+
+def validate_ticket_tool_ownership(
+    agent_tool_map: dict[str, list[Any]],
+    tool_name: str,
+) -> list[str]:
+    owners = [
+        role
+        for role, tools in agent_tool_map.items()
+        if any(getattr(tool, "name", None) == tool_name for tool in tools)
+    ]
+
+    if owners != ["Ticket Lookup Agent"]:
+        raise PermissionError(
+            f"{tool_name} must belong only to Ticket Lookup Agent; "
+            f"found owners: {owners}"
+        )
+
+    return owners
+
 
 def _extract_result(result: Any) -> SupportResponse:
     pydantic_result = getattr(result, "pydantic", None)
@@ -42,11 +63,22 @@ def run_support_crew(query: str) -> SupportResponse:
 
     os.environ["CREWAI_DISABLE_TELEMETRY"] = "true"
     os.environ["OTEL_SDK_DISABLED"] = "true"
+    os.environ["CREWAI_TRACING_ENABLED"] = "false"
     os.environ["MOCK_LLM"] = "true"
 
     rag_tool = RagLookupTool()
     lookup_tool = TicketLookupTool()
     ticket_runtime.LAST_TOOL_RESULT = None
+
+    agent_tool_map: dict[str, list[Any]] = {
+        "Policy Retrieval Agent": [rag_tool],
+        "Ticket Lookup Agent": [lookup_tool],
+        "Response Composer": [],
+    }
+    LAST_TOOL_OWNERSHIP[lookup_tool.name] = validate_ticket_tool_ownership(
+        agent_tool_map,
+        lookup_tool.name,
+    )
 
     # Give each tool-using agent a mock LLM registered only with its own
     # declared tool schema. CrewAI does not always pass `tools` into a
@@ -62,7 +94,7 @@ def run_support_crew(query: str) -> SupportResponse:
         goal="Retrieve only policy context relevant to the user question.",
         backstory="You search the local policy index and return its evidence.",
         llm=retrieval_llm,
-        tools=[rag_tool],
+        tools=agent_tool_map["Policy Retrieval Agent"],
         allow_delegation=False,
         verbose=True,
     )
@@ -71,7 +103,7 @@ def run_support_crew(query: str) -> SupportResponse:
         goal="Look up the exact support ticket requested by the user.",
         backstory="You use the local generated ticket records for status lookup.",
         llm=lookup_llm,
-        tools=[lookup_tool],
+        tools=agent_tool_map["Ticket Lookup Agent"],
         allow_delegation=False,
         verbose=True,
     )
@@ -83,8 +115,16 @@ def run_support_crew(query: str) -> SupportResponse:
             "Return the required structured response."
         ),
         llm=composer_llm,
+        tools=agent_tool_map["Response Composer"],
         allow_delegation=False,
         verbose=True,
+    )
+
+    agents = [retrieval_agent, lookup_agent, composer_agent]
+    actual_tool_map = {agent.role: agent.tools for agent in agents}
+    LAST_TOOL_OWNERSHIP[lookup_tool.name] = validate_ticket_tool_ownership(
+        actual_tool_map,
+        lookup_tool.name,
     )
 
     ticket_id = re.search(r"\bTKT-\d{5}\b", query, flags=re.I)
@@ -125,9 +165,10 @@ def run_support_crew(query: str) -> SupportResponse:
     )
 
     crew = Crew(
-        agents=[retrieval_agent, lookup_agent, composer_agent],
+        agents=agents,
         tasks=[evidence_task, composer_task],
         process=Process.sequential,
+        tracing=False,
         verbose=True,
     )
 

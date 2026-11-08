@@ -14,9 +14,14 @@ from fastapi import (
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from ola_support.agents.crew import run_support_crew
 from ola_support.agents.memory import history_for
+from ola_support.agents.review_team import run_reviewed_support_crew
 from ola_support.guardrails import input_guardrail, mask_phone_numbers
+from ola_support.governance.budget import RequestBudgetExceeded, enforce_request_budget
+from ola_support.governance.cache import (
+    clear_response_cache,
+    get_or_compute_grounded_response,
+)
 from ola_support.rag.indexing import KB_DIR, build_indexes
 from ola_support.schemas import SupportResponse
 from ola_support.api.logging_config import write_json_log
@@ -27,7 +32,7 @@ TICKET_ID_PATTERN = re.compile(r"\bTKT-\d{5}\b", re.IGNORECASE)
 
 
 class AskRequest(BaseModel):
-    query: str = Field(min_length=3, max_length=2000)
+    query: str = Field(min_length=3, max_length=20000)
     session_id: str | None = Field(default=None, max_length=100)
 
 
@@ -71,8 +76,12 @@ def process_query(query: str) -> tuple[SupportResponse, str]:
             safe_query,
         )
 
-    response = run_support_crew(safe_query)
-    return SupportResponse.model_validate(response), safe_query
+    enforce_request_budget(safe_query)
+    response_data = get_or_compute_grounded_response(
+        safe_query,
+        lambda: run_reviewed_support_crew(safe_query).model_dump(mode="json"),
+    )
+    return SupportResponse.model_validate(response_data), safe_query
 
 
 def _write_document_and_rebuild(
@@ -88,7 +97,9 @@ def _write_document_and_rebuild(
         title = document_id.replace("_", " ").replace("-", " ").title()
         path.write_text(f"# {title}\n\n{text.strip()}\n", encoding="utf-8")
 
-        return build_indexes()
+        counts = build_indexes()
+        clear_response_cache()
+        return counts
 
 
 def _query_with_session_context(query: str, history: Any) -> str:
@@ -114,10 +125,13 @@ async def ask(payload: AskRequest, request: Request) -> SupportResponse:
     # Set the safe log value before calling the crew, in case it raises.
     request.state.safe_request_text = mask_phone_numbers(payload.query)
 
-    response, safe_query = await run_in_threadpool(
-        process_query,
-        payload.query,
-    )
+    try:
+        response, safe_query = await run_in_threadpool(
+            process_query,
+            payload.query,
+        )
+    except RequestBudgetExceeded as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
     request.state.safe_request_text = safe_query
     return response
 
@@ -177,14 +191,14 @@ async def websocket_chat(websocket: WebSocket) -> None:
             safe_query = mask_phone_numbers(raw_query)
             trace_id = __import__("uuid").uuid4().hex
 
-            if len(raw_query) > 2000:
+            if len(raw_query) > 20000:
                 write_json_log(
                     {
                         "trace_id": trace_id,
                         "endpoint": "/ws/chat",
                         "status_code": 413,
                         "duration_ms": 0,
-                        "request_text": safe_query[:2000],
+                        "request_text": safe_query[:20000],
                     }
                 )
                 await websocket.send_json(
@@ -203,23 +217,20 @@ async def websocket_chat(websocket: WebSocket) -> None:
                 guarded = input_guardrail(raw_query)
                 safe_query = guarded["masked_text"]
 
-                if not guarded["allowed"]:
-                    response = SupportResponse(
-                        answer=(
-                            "I can’t process instructions that attempt "
-                            "to override safeguards."
-                        ),
-                        fallback=True,
-                    )
-                else:
+                if guarded["allowed"]:
                     effective_query = _query_with_session_context(
                         safe_query,
                         history,
                     )
-                    response, _ = await run_in_threadpool(
-                        process_query,
-                        effective_query,
-                    )
+                else:
+                    # process_query returns the same safe refusal and avoids
+                    # exposing the raw text to the CrewAI crew.
+                    effective_query = safe_query
+
+                response, _ = await run_in_threadpool(
+                    process_query,
+                    effective_query,
+                )
 
                 history.add_user_message(safe_query)
                 history.add_ai_message(response.answer)
@@ -240,7 +251,28 @@ async def websocket_chat(websocket: WebSocket) -> None:
                             (time.perf_counter() - started) * 1000,
                             2,
                         ),
-                        "request_text": safe_query[:2000],
+                        "request_text": safe_query[:20000],
+                    }
+                )
+
+            except RequestBudgetExceeded as exc:
+                write_json_log(
+                    {
+                        "trace_id": trace_id,
+                        "endpoint": "/ws/chat",
+                        "status_code": 413,
+                        "duration_ms": round(
+                            (time.perf_counter() - started) * 1000,
+                            2,
+                        ),
+                        "request_text": safe_query[:20000],
+                        "error_type": type(exc).__name__,
+                    }
+                )
+                await websocket.send_json(
+                    {
+                        "error": str(exc),
+                        "trace_id": trace_id,
                     }
                 )
 
@@ -255,7 +287,7 @@ async def websocket_chat(websocket: WebSocket) -> None:
                             (time.perf_counter() - started) * 1000,
                             2,
                         ),
-                        "request_text": safe_query[:2000],
+                        "request_text": safe_query[:20000],
                         "error_type": type(exc).__name__,
                     }
                 )

@@ -2,13 +2,13 @@
 
 **Track:** Ola (Business Operations / Customer Support).
 
-**Project status:** Parts 1–2 have initial run evidence. Part 3's FastAPI app now starts locally, and its OpenAPI page displays `POST /ask` and `POST /add-document`. Successful endpoint calls, WebSocket disconnect handling, JSONL privacy checks, and the 15-query evaluation still need recorded evidence. Part 4 remains in progress; retrieval precision and offline embedding execution also need follow-up.
+**Project status:** Parts 1–2 have run evidence. Part 3's FastAPI app starts locally, its OpenAPI page displays `POST /ask` and `POST /add-document`, and a policy question returned HTTP 200 with a structured response; `/add-document`, WebSocket disconnect handling, JSONL privacy, and the 15-query evaluation still need recorded evidence. The Part 4 AutoGen review, least-autonomy, request-budget, and response-cache demonstrations have now run successfully. Retrieval precision and offline embedding execution still need follow-up.
 
 This repository is the 14-day capstone for a deterministic, production-minded support assistant. It combines a generated ticket dataset, a locally embedded policy knowledge base, two retrieval strategies, a CrewAI crew, in-process conversation memory, input and output guardrails, an AutoGen answer review, governance controls, and a FastAPI/WebSocket interface.
 
 The graded path must run with `MOCK_LLM=true`, no API keys, and no outbound LLM calls. CrewAI telemetry is disabled before creating or running the crew. SentenceTransformers may need a one-time model download during setup; cache the model first, then run the demonstrations with network access disabled to verify offline operation.
 
-> **Status note:** Part 1 measurements, Part 2 CrewAI/memory/guardrail demonstrations, and the Part 3 server startup/OpenAPI page below reflect supplied run output. The Part 3 screenshot confirms that the docs page displays the two HTTP routes; it does not demonstrate a successful `/ask` or `/add-document` call, a WebSocket exchange, safe JSONL logs, or the 15-query evaluation. Later acceptance demonstrations remain incomplete, so this is not a claim that the full capstone is complete.
+> **Status note:** Part 1 measurements, Part 2 CrewAI/memory/guardrail demonstrations, and the Part 3 server startup, OpenAPI page, and one successful `/ask` request reflect run output. That `/ask` answer cited `ticket_priority`, `data_retention`, and `sla_policy`; the latter two are unrelated to the priority question, so retrieval relevance still needs improvement. Part 4 review and governance evidence was generated in `transcripts/autogen_tests.md` and `transcripts/governance_tests.md`. `/add-document`, WebSocket handling, JSONL privacy, and the 15-query evaluation have not yet been evidenced; this is not a claim that the full capstone is complete.
 
 ## 1. Project layout
 
@@ -349,26 +349,45 @@ Record all four scores for every query and their 15-query averages in:
 
 Suggested topic prompts include: classify priority; explain the severity SLA; name escalation routes; describe refund review; select the account-specific channel; explain holiday coverage; handle a repeat complaint; determine service-credit conditions; describe feedback collection; route a VIP issue; communicate an outage; and explain retention. Add two unrelated questions and one ambiguous edge case to reach 15.
 
-### Step 11 — Add the AutoGen review team
+### Step 11 — AutoGen review results
 
-In `agents/review_team.py`, create a two-agent AutoGen `RoundRobinGroupChat`:
+`src/ola_support/agents/review_team.py` runs a two-agent `RoundRobinGroupChat` with `max_turns=2`: the Policy Compliance Reviewer checks the Composer draft against the original tool result, and the Final Editor returns a Pydantic `ReviewVerdict` (`approved`, `final_answer`, `reason`). `StructuredMessage[ReviewVerdict]` is registered on the team. The local replay client keeps the run deterministic and keyless; the deterministic mock decision is passed through the actual AutoGen team.
 
-1. `PolicyComplianceReviewer` checks every draft claim against the retrieved context.
-2. `FinalEditor` returns a Pydantic verdict with `approved`, `final_answer`, and `reason`.
+Run the demonstration with:
 
-Use `max_turns=2`. If the final editor has `output_content_type=VerdictModel`, register `StructuredMessage[VerdictModel]` with the team’s `custom_message_types`. Run two examples: one approved unchanged, and one draft containing a deliberately ungrounded claim that the review revises. Save both structured verdicts in `transcripts/autogen_tests.md`.
+```powershell
+$env:PYTHONPATH = "src"
+$env:MOCK_LLM = "true"
+$env:CREWAI_DISABLE_TELEMETRY = "true"
+$env:OTEL_SDK_DISABLED = "true"
+$env:CREWAI_TRACING_ENABLED = "false"
+$env:PYTHONIOENCODING = "utf-8"
+python scripts/demonstrate_review.py
+```
 
-Implement the mock AutoGen model client for the pinned AutoGen version so review also runs without an API key. Test its structured message output against the installed package version before documenting it as working.
+The run saved both cases in `transcripts/autogen_tests.md`: the supported service-credit draft was approved unchanged (`approved: true`), and a deliberately added promise of “₹500 within one hour” was rejected and removed (`approved: false`).
 
-### Step 12 — Apply governance and caching
+### Step 12 — Governance and cache results
 
-In `governance/budget.py`, estimate input size before starting a request and reject an oversized request before invoking the crew. Use `TOKEN_BUDGET_PER_REQUEST=2000` as the documented cap unless you deliberately choose and consistently document another value. Demonstrate both an accepted request and a deliberately oversized request rejected with a clear error.
+The crew builds an explicit role-to-tools map and validates tool ownership before kickoff. Only `Ticket Lookup Agent` receives `check_support_ticket_status`; the Retrieval Agent receives only `rag_lookup`, the Composer has no tools, and delegation is disabled. The demonstration also tries to give the lookup tool to the Composer and confirms that the ownership guard raises `PermissionError`.
 
-In `governance/cache.py`, cache grounded-generation results by normalized query text (trim, lowercase, collapse whitespace). Add a call counter. Demonstrate first request as a miss and a repeated equivalent query as a hit with no extra grounded-generation call.
+The system is classified as **Medium risk**: it supports customer-ticket routing and response, but uses fabricated ticket data and does not decide refunds or make medical, hiring, lending, or similar high-impact determinations. The per-request cap is `TOKEN_BUDGET_PER_REQUEST=2000`; the current estimate is `ceil(input_characters / 4) + 256` tokens. A normal policy question estimated at 265 tokens was accepted. A deliberately oversized request estimated at 7,756 tokens was rejected before any tool call; both tool counters remained zero.
 
-Document application-level least autonomy: only the Lookup Agent receives the ticket lookup tool. Classify the system as **Medium risk** under the capstone’s scheme because it handles customer-support tickets; explain that it does not make medical, hiring, lending, or other high-impact determinations.
+The in-memory response cache uses case-folded query text with whitespace collapsed as its key and wraps the grounded crew/review call. In the repeated-query demonstration, the first call was one miss and one producer call (`rag_lookup: 1`); the second returned the same answer as one cache hit without incrementing tool calls. The complete evidence is in `transcripts/governance_tests.md`.
 
-Save budget and cache evidence in `transcripts/governance_tests.md` or `transcripts/guardrail_tests.md`.
+Run the Part 4 evidence scripts with:
+
+```powershell
+$env:PYTHONPATH = "src"
+$env:MOCK_LLM = "true"
+$env:CREWAI_DISABLE_TELEMETRY = "true"
+$env:OTEL_SDK_DISABLED = "true"
+$env:CREWAI_TRACING_ENABLED = "false"
+$env:TOKEN_BUDGET_PER_REQUEST = "2000"
+$env:PYTHONIOENCODING = "utf-8"
+python scripts/demonstrate_review.py
+python scripts/demonstrate_governance.py
+```
 
 ### Step 13 — Deploy the API and write safe structured logs
 
@@ -402,10 +421,13 @@ The local run completed the following checks:
 | ChromaDB index build | 55 source documents, 55 fixed-overlap chunks, and 166 sentence chunks were indexed. Both collections returned the ticket-priority document for the sample query. |
 | FastAPI startup | Uvicorn reported that the application startup completed on `http://127.0.0.1:8000`. |
 | OpenAPI page | `/docs` loaded and displayed `POST /ask` and `POST /add-document` with their request/response schemas. The screenshot below records this route-registration check. |
+| `POST /ask` | `How are support tickets prioritized?` returned HTTP `200`, `fallback: false`, and a valid `SupportResponse`. The response listed `ticket_priority`, `data_retention`, and `sla_policy`; the latter two are irrelevant results and are recorded as a retrieval-quality limitation. |
 
 ![FastAPI OpenAPI docs showing the registered ask and add-document endpoints](Diagrams/Step-3Success.png)
 
-The screenshot shows the API documentation and route schemas, not a successful endpoint response. Keep the API checklist below unchecked until the HTTP request, WebSocket/disconnect, sanitized JSONL log, and 15-query evaluation evidence have been saved.
+The screenshot shows the API documentation and route schemas. The successful `/ask` response is recorded from the second-terminal output, not from the screenshot. The request returned `200 OK`, `fallback: false`, and the expected `ticket_priority` source, but also included unrelated `data_retention` and `sla_policy` sources. `/add-document`, WebSocket/disconnect, sanitized JSONL log, and 15-query evaluation evidence remain to be saved before marking the API acceptance item complete.
+
+The CrewAI output also printed an ephemeral trace URL even though telemetry environment variables were set. Telemetry and execution tracing are separate controls; explicitly disable tracing on the `Crew` (`tracing=False`) and confirm no trace-sharing prompt or upload occurs before claiming zero network activity. CrewAI documents tracing as independently controlled from telemetry and says trace uploads require an approved export ([CrewAI tracing documentation](https://github.com/crewAIInc/crewAI/blob/main/docs/edge/en/observability/tracing.mdx)).
 
 ## 5. Full execution order
 
@@ -416,7 +438,9 @@ $env:PYTHONPATH = "src"
 $env:MOCK_LLM = "true"
 $env:CREWAI_DISABLE_TELEMETRY = "true"
 $env:OTEL_SDK_DISABLED = "true"
+$env:CREWAI_TRACING_ENABLED = "false"
 $env:TOKEN_BUDGET_PER_REQUEST = "2000"
+$env:PYTHONIOENCODING = "utf-8"
 
 python src/ola_support/dataset.py
 python scripts/build_index.py
@@ -424,6 +448,7 @@ python scripts/calibrate_threshold.py
 python scripts/evaluate_retrieval.py
 python scripts/demonstrate_guardrails.py
 python scripts/demonstrate_memory.py
+python scripts/demonstrate_review.py
 python scripts/demonstrate_governance.py
 python scripts/evaluate_agent.py
 ```
@@ -487,7 +512,7 @@ When implementation and evidence are complete:
 - [ ] FastAPI has two HTTP endpoints and a WebSocket that handles disconnects.
 - [ ] JSONL logs include trace ID and timing and do not store unmasked phone values.
 - [ ] All 15 evaluation questions have four scores and four reported averages.
-- [ ] AutoGen reviewer approves one draft unchanged and revises one ungrounded draft.
-- [ ] Lookup tool is available only to Lookup Agent; risk level and reason documented.
-- [ ] Oversized request is rejected; repeated query proves a cache hit and avoided call.
+- [x] AutoGen reviewer approves one draft unchanged and revises one ungrounded draft; both verdicts are structured Pydantic output.
+- [x] Lookup tool is available only to Lookup Agent; unauthorized wiring is blocked and the Medium risk classification is documented.
+- [x] Oversized request is rejected before tool calls; repeated query proves a cache hit with no redundant tool call.
 - [ ] Transcripts and reports contain real outputs from the local `MOCK_LLM` run.

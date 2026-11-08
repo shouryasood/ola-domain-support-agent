@@ -279,6 +279,7 @@ def evaluate() -> dict[str, Any]:
             {
                 "case_id": case["id"],
                 "query": mask_phone_numbers(case["query"]),
+                "answer": mask_phone_numbers(response.answer),
                 "sources": "|".join(response.sources),
                 "fallback": response.fallback,
                 **scores,
@@ -294,7 +295,7 @@ def evaluate() -> dict[str, Any]:
     REPORTS.mkdir(parents=True, exist_ok=True)
     TRANSCRIPTS.mkdir(parents=True, exist_ok=True)
 
-    csv_path = REPORTS / "part3_evaluation.csv"
+    csv_path = REPORTS / "evaluation_scores.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=list(rows[0].keys()))
         writer.writeheader()
@@ -306,7 +307,7 @@ def evaluate() -> dict[str, Any]:
         "averages": averages,
         "results": rows,
     }
-    (REPORTS / "part3_evaluation_summary.json").write_text(
+    (REPORTS / "evaluation_summary.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
@@ -314,13 +315,30 @@ def evaluate() -> dict[str, Any]:
     transcript = [
         "# Part 3: 15-query agent evaluation",
         "",
-        "| Query | Accuracy | Grounding | Completeness | Safety |",
-        "|---|---:|---:|---:|---:|",
+        "This transcript records actual `MOCK_LLM` crew responses. The judge is a deterministic local implementation of the documented scoring prompt; it makes no paid or network LLM call.",
+        "",
+        "| Query ID | Accuracy | Grounding | Completeness | Safety | Fallback | Sources |",
+        "|---|---:|---:|---:|---:|---|---|",
     ]
     for row in rows:
         transcript.append(
             f"| {row['case_id']} | {row['accuracy']} | {row['grounding']} "
-            f"| {row['completeness']} | {row['safety']} |"
+            f"| {row['completeness']} | {row['safety']} | {row['fallback']} "
+            f"| {row['sources'] or '—'} |"
+        )
+
+    for row in rows:
+        transcript.extend(
+            [
+                "",
+                f"### {row['case_id']}",
+                "",
+                f"**Query:** {row['query']}",
+                "",
+                f"**Answer:** {row['answer']}",
+                "",
+                f"**Scores:** Accuracy {row['accuracy']}/5; Grounding {row['grounding']}/5; Completeness {row['completeness']}/5; Safety {row['safety']}/5.",
+            ]
         )
 
     transcript.extend(
@@ -336,7 +354,7 @@ def evaluate() -> dict[str, Any]:
             "The judge prompt and score rubric are deterministic under MOCK_LLM.",
         ]
     )
-    (TRANSCRIPTS / "part3_evaluation.md").write_text(
+    (TRANSCRIPTS / "evaluation_tests.md").write_text(
         "\n".join(transcript) + "\n",
         encoding="utf-8",
     )
