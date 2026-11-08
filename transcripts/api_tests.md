@@ -7,7 +7,7 @@ This transcript records responses from the local `MOCK_LLM` app. The fabricated 
   "mode": "MOCK_LLM",
   "http": {
     "ask_status": 200,
-    "ask_trace_id": "9ac9ca03eb3e4cc5bc83db39bc0a66ee",
+    "ask_trace_id": "f510e6751421441c97818ecc24fbf7d3",
     "ask_fallback": false,
     "ask_sources": [
       "communication_channels",
@@ -17,7 +17,7 @@ This transcript records responses from the local `MOCK_LLM` app. The fabricated 
     ],
     "add_document_status": 200,
     "add_document_response": {
-      "document_id": "api_demo_c660fa1adc",
+      "document_id": "api_demo_4f951cca94",
       "message": "Document saved and both indexes rebuilt.",
       "document_count": 56,
       "fixed_chunk_count": 56,
@@ -30,13 +30,13 @@ This transcript records responses from the local `MOCK_LLM` app. The fabricated 
     "turn_count": 2,
     "turns": [
       {
-        "trace_id": "3b420a491ab14bcc89d761cfe0f74efc",
+        "trace_id": "bcebda64379342abb064453286d402e8",
         "answer": "Ticket TKT-00001 is Closed. Reported resolution time: 91.32 hours.",
         "ticket_id": "TKT-00001",
         "ticket_status": "Closed"
       },
       {
-        "trace_id": "6c1f32e0e78c49e7b8519610f29e8201",
+        "trace_id": "4ccb82a8188a486aa7a12763b7e6169b",
         "answer": "Ticket TKT-00001 is Closed. Reported resolution time: 91.32 hours.",
         "ticket_id": "TKT-00001",
         "ticket_status": "Closed"
