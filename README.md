@@ -2,13 +2,13 @@
 
 **Track:** Ola (Business Operations / Customer Support).
 
-**Project status:** Parts 1–2 have run evidence. Part 3's FastAPI app starts locally, its OpenAPI page displays `POST /ask` and `POST /add-document`, and a policy question returned HTTP 200 with a structured response; `/add-document`, WebSocket disconnect handling, JSONL privacy, and the 15-query evaluation still need recorded evidence. The Part 4 AutoGen review, least-autonomy, request-budget, and response-cache demonstrations have now run successfully. Retrieval precision and offline embedding execution still need follow-up.
+**Project status:** Parts 1–4 have local `MOCK_LLM` run evidence, including both HTTP endpoints, WebSocket disconnect recovery, privacy-checked JSONL logs, and a 15-query evaluation. The evaluation and API transcripts and reports are linked below. Retrieval relevance still needs improvement because some top-k results are unrelated to the question; offline SentenceTransformers loading succeeded using the cached model.
 
 This repository is the 14-day capstone for a deterministic, production-minded support assistant. It combines a generated ticket dataset, a locally embedded policy knowledge base, two retrieval strategies, a CrewAI crew, in-process conversation memory, input and output guardrails, an AutoGen answer review, governance controls, and a FastAPI/WebSocket interface.
 
 The graded path must run with `MOCK_LLM=true`, no API keys, and no outbound LLM calls. CrewAI telemetry is disabled before creating or running the crew. SentenceTransformers may need a one-time model download during setup; cache the model first, then run the demonstrations with network access disabled to verify offline operation.
 
-> **Status note:** Part 1 measurements, Part 2 CrewAI/memory/guardrail demonstrations, and the Part 3 server startup, OpenAPI page, and one successful `/ask` request reflect run output. That `/ask` answer cited `ticket_priority`, `data_retention`, and `sla_policy`; the latter two are unrelated to the priority question, so retrieval relevance still needs improvement. Part 4 review and governance evidence was generated in `transcripts/autogen_tests.md` and `transcripts/governance_tests.md`. `/add-document`, WebSocket handling, JSONL privacy, and the 15-query evaluation have not yet been evidenced; this is not a claim that the full capstone is complete.
+> **Status note:** The Part 3 acceptance items now have repeatable evidence in `transcripts/api_tests.md`, `transcripts/evaluation_tests.md`, `reports/evaluation_scores.csv`, and `reports/evaluation_summary.json`. The API test uses a temporary fabricated document, removes it after checking `/add-document`, and rebuilds the baseline indexes. This completes the listed Part 3 route, logging, and evaluation evidence; retrieval relevance is still a known quality limitation.
 
 ## 1. Project layout
 
@@ -337,17 +337,17 @@ The memory script emitted a LangChain deprecation warning for `InMemoryChatMessa
 
 SentenceTransformers again printed an unauthenticated Hugging Face Hub warning. Offline inference is not yet verified. After the model is cached, rerun the retrieval demonstration with `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`, and record the result. If CrewAI asks to share execution traces, select **N**; the graded run should not upload prompts or tool outputs.
 
-### Step 10 — Implement evaluation on 15 queries
+### Step 10 — 15-query evaluation results
 
-Create `scripts/evaluate_agent.py` with 15 fixed questions: at least one for each of the 12 policy topics and at least two out-of-scope or edge-case questions. Use a deterministic mock evaluator with an explicit 1–5 rubric for Accuracy, Grounding, Completeness, and Safety. It must run without an API key and must not be described as a real external LLM judge.
+`scripts/evaluate_agent.py` ran 15 fixed questions: all 12 required policy topics, a phone-masking case, an out-of-scope question, and a prompt-injection case. Each query ran through the local CrewAI pipeline with `MOCK_LLM=true`; the local deterministic judge applies the documented 1–5 scoring rubric and makes no external LLM call. The report and transcript include the masked query, actual answer, sources, fallback result, four scores, and averages.
 
-Record all four scores for every query and their 15-query averages in:
+Observed averages: **Accuracy 5.000**, **Grounding 5.000**, **Completeness 4.333**, and **Safety 5.000**. Completeness is lower for some queries because the mock rubric checks for listed required phrases. These are results from the deterministic rubric, not independent semantic-judge scores. Phone values are masked in persisted evaluation output.
 
-- `reports/evaluation_scores.csv`
-- `reports/evaluation_summary.json`
-- `transcripts/evaluation_tests.md`
+Files written by the successful run:
 
-Suggested topic prompts include: classify priority; explain the severity SLA; name escalation routes; describe refund review; select the account-specific channel; explain holiday coverage; handle a repeat complaint; determine service-credit conditions; describe feedback collection; route a VIP issue; communicate an outage; and explain retention. Add two unrelated questions and one ambiguous edge case to reach 15.
+- `reports/evaluation_scores.csv` — all 15 rows with four scores, actual sanitized answers, and source/fallback fields.
+- `reports/evaluation_summary.json` — `mode: MOCK_LLM`, 15 results, and the four means.
+- `transcripts/evaluation_tests.md` — per-query results and actual sanitized response text.
 
 ### Step 11 — AutoGen review results
 
@@ -397,7 +397,7 @@ Implement `api/main.py`, `api/routes.py`, and `api/logging_config.py`. Provide:
 - `POST /add-document` with validation and indexing behavior.
 - A WebSocket route such as `/ws/chat` for a multi-turn session.
 
-Every HTTP request and WebSocket message must produce one JSONL log entry containing a trace ID and timing information. Mask phone numbers before both logging and inference. Do not log raw prompts in exception paths. Catch `WebSocketDisconnect` around the receive loop and clean up per-session state without stopping the application.
+Every HTTP request and WebSocket message produces a JSONL entry with a trace ID and duration. Phone numbers are masked before logging and inference; exception logs record the error type but not raw prompt text. The WebSocket loop catches `WebSocketDisconnect` and logs the disconnect without stopping the app.
 
 Once implemented, run the server from the project root:
 
@@ -409,7 +409,7 @@ $env:OTEL_SDK_DISABLED = "true"
 python -m uvicorn ola_support.api.main:app --app-dir src --reload
 ```
 
-Open `http://127.0.0.1:8000/docs` to inspect and exercise the HTTP endpoints. For WebSocket validation, use a client that connects, sends at least two messages, and disconnects; then confirm the server remains available. Save sanitized request/response examples in `transcripts/api_tests.md`.
+Open `http://127.0.0.1:8000/docs` to inspect and exercise the HTTP endpoints. To reproduce the API acceptance run, use `python scripts/demonstrate_api.py` with the same environment. It posts to `/ask` and `/add-document`, sends two turns through `/ws/chat`, disconnects while the server awaits another turn, then requests `/openapi.json` to verify the app remains responsive. The add-document check uses a temporary fabricated document, verifies that its phone number was masked before storage, removes the document, and rebuilds the checked-in knowledge base indexes.
 
 #### Latest Part 3 run evidence
 
@@ -422,10 +422,14 @@ The local run completed the following checks:
 | FastAPI startup | Uvicorn reported that the application startup completed on `http://127.0.0.1:8000`. |
 | OpenAPI page | `/docs` loaded and displayed `POST /ask` and `POST /add-document` with their request/response schemas. The screenshot below records this route-registration check. |
 | `POST /ask` | `How are support tickets prioritized?` returned HTTP `200`, `fallback: false`, and a valid `SupportResponse`. The response listed `ticket_priority`, `data_retention`, and `sla_policy`; the latter two are irrelevant results and are recorded as a retrieval-quality limitation. |
+| `POST /add-document` | The acceptance script received HTTP `200`, verified indexing counts of 56 documents / 56 fixed chunks / 168 sentence chunks, confirmed the fixed-format phone had been masked in the stored temporary document, then removed that document and restored the baseline index. |
+| WebSocket and disconnect | `/ws/chat` processed two ticket-status turns; leaving the client context exercised `WebSocketDisconnect`. A subsequent `/openapi.json` request returned `200`. |
+| JSONL privacy | Six newly generated entries were checked. Every entry had a trace ID and `duration_ms`; the raw test phone was absent, `[PHONE REDACTED]` was present, and the disconnect event was logged. |
+| 15-query evaluation | All 15 answers and scores were written to the evaluation report/transcript. Averages were Accuracy 5.000, Grounding 5.000, Completeness 4.333, and Safety 5.000. |
 
 ![FastAPI OpenAPI docs showing the registered ask and add-document endpoints](Diagrams/Step-3Success.png)
 
-The screenshot shows the API documentation and route schemas. The successful `/ask` response is recorded from the second-terminal output, not from the screenshot. The request returned `200 OK`, `fallback: false`, and the expected `ticket_priority` source, but also included unrelated `data_retention` and `sla_policy` sources. `/add-document`, WebSocket/disconnect, sanitized JSONL log, and 15-query evaluation evidence remain to be saved before marking the API acceptance item complete.
+The screenshot shows the API documentation and route schemas. The successful `/ask` response is recorded from the second-terminal output, not from the screenshot. That request returned `200 OK` and `fallback: false`, but also included unrelated `data_retention` and `sla_policy` sources; the later acceptance transcript separately covers `/add-document`, WebSocket/disconnect handling, JSONL privacy, and the 15-query evaluation.
 
 The CrewAI output also printed an ephemeral trace URL even though telemetry environment variables were set. Telemetry and execution tracing are separate controls; explicitly disable tracing on the `Crew` (`tracing=False`) and confirm no trace-sharing prompt or upload occurs before claiming zero network activity. CrewAI documents tracing as independently controlled from telemetry and says trace uploads require an approved export ([CrewAI tracing documentation](https://github.com/crewAIInc/crewAI/blob/main/docs/edge/en/observability/tracing.mdx)).
 
@@ -450,6 +454,7 @@ python scripts/demonstrate_guardrails.py
 python scripts/demonstrate_memory.py
 python scripts/demonstrate_review.py
 python scripts/demonstrate_governance.py
+python scripts/demonstrate_api.py
 python scripts/evaluate_agent.py
 ```
 
@@ -475,6 +480,7 @@ Before submission, ensure these files are populated with actual run results rath
 | `reports/retrieval_comparison.csv` | Per-query precision/recall for both collections |
 | `reports/evaluation_scores.csv` | Four scores for each of the 15 evaluation queries |
 | `reports/evaluation_summary.json` | Four means across all 15 queries |
+| `transcripts/evaluation_tests.md` | All 15 actual sanitized answers, per-query scores, and averages |
 | `transcripts/rag_tests.md` | Five supported RAG responses and one fallback |
 | `transcripts/crew_tests.md` | Both CrewAI tool invocations and validated structured output |
 | `transcripts/memory_tests.md` | Context carried forward and absent in fresh session |
@@ -510,9 +516,10 @@ When implementation and evidence are complete:
 - [x] Crew final output validates against the Pydantic `SupportResponse` schema.
 - [x] Phone masking, injection guard, and groundedness refusal each demonstrated.
 - [ ] FastAPI has two HTTP endpoints and a WebSocket that handles disconnects.
-- [ ] JSONL logs include trace ID and timing and do not store unmasked phone values.
-- [ ] All 15 evaluation questions have four scores and four reported averages.
+- [x] FastAPI exposes `/ask` and `/add-document`; the WebSocket handles a disconnect and the app continues to respond.
+- [x] JSONL logs include trace IDs and timing and do not store the raw fixed-format phone value.
+- [x] All 15 evaluation questions have four scores and four reported averages.
 - [x] AutoGen reviewer approves one draft unchanged and revises one ungrounded draft; both verdicts are structured Pydantic output.
 - [x] Lookup tool is available only to Lookup Agent; unauthorized wiring is blocked and the Medium risk classification is documented.
 - [x] Oversized request is rejected before tool calls; repeated query proves a cache hit with no redundant tool call.
-- [ ] Transcripts and reports contain real outputs from the local `MOCK_LLM` run.
+- [x] Transcripts and reports contain actual sanitized outputs from local `MOCK_LLM` runs.

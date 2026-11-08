@@ -10,6 +10,9 @@ from typing import Any
 os.environ["MOCK_LLM"] = "true"
 os.environ["CREWAI_DISABLE_TELEMETRY"] = "true"
 os.environ["OTEL_SDK_DISABLED"] = "true"
+os.environ["CREWAI_TRACING_ENABLED"] = "false"
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 from ola_support.api.routes import process_query
 from ola_support.guardrails import mask_phone_numbers
@@ -279,7 +282,9 @@ def evaluate() -> dict[str, Any]:
             {
                 "case_id": case["id"],
                 "query": mask_phone_numbers(case["query"]),
-                "answer": mask_phone_numbers(response.answer),
+                "answer": " ".join(
+                    mask_phone_numbers(response.answer).split()
+                ),
                 "sources": "|".join(response.sources),
                 "fallback": response.fallback,
                 **scores,
@@ -307,6 +312,11 @@ def evaluate() -> dict[str, Any]:
         "averages": averages,
         "results": rows,
     }
+    serialized_summary = json.dumps(summary, ensure_ascii=False)
+    for case in TEST_CASES:
+        raw_phone = case.get("raw_phone")
+        if raw_phone and raw_phone in serialized_summary:
+            raise AssertionError("A raw phone number reached evaluation output")
     (REPORTS / "evaluation_summary.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False),
         encoding="utf-8",
