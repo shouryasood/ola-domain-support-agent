@@ -42,7 +42,10 @@ def summarize_messages(result: Any) -> list[dict[str, Any]]:
 async def main() -> dict[str, Any]:
     query = "What is the service credit policy?"
 
-    clean_draft = run_support_crew(query)
+    # CrewAI's synchronous kickoff cannot run inside this script's active
+    # asyncio loop. Keep the crew execution in a worker thread, then run the
+    # AutoGen review on the event-loop thread.
+    clean_draft = await asyncio.to_thread(run_support_crew, query)
     clean_context = context_from_last_tool()
     approved, approved_run = await review_draft(
         clean_draft.answer,
